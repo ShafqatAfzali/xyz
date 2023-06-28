@@ -19,110 +19,15 @@ server.use(cookie_parser())
 
 server.use(express.static('build'));
 
-function autentiser(req,res,next){
-    const token = req.cookies["authorization"]
-    if(token == null){
-        return res.sendStatus(401)
-    }
-    jwt.verify(token, process.env.AUTH_KEY, (err,user)=>{
-        if (err){
-            return res.sendStatus(401)
-        }
-        req.user = user
-        next()
-    })
-}
-
-server.get("/api/data_tilgang",autentiser,async (req,res)=>{
-    const connection = mysql.createConnection({
-        host: process.env.NEXT_AZURE_HOST,
-        user: process.env.NEXT_AZURE_USER_NAME,
-        password: process.env.NEXT_AZURE_PASS,
-        database: process.env.NEXT_AZURE_DATABASE,
-        port: process.env.NEXT_AZURE_PORT
-      })
-
-    const kunde=await new Promise((resolve,reject)=>{
-        connection.query(`SELECT * FROM kunde`, (err, results, fields) => {
-        if(err){
-            reject(err)
-        } else{
-            resolve(results)
-        }
-        })
-    })
-
-    const salg=await new Promise((resolve,reject)=>{
-        connection.query(`SELECT * FROM salg`, (err, results, fields) => {
-        if(err){
-            reject(err)
-        } else{
-            resolve(results)
-        }
-        })
-    })
-    connection.end();
-
-    res.status(200).json({kunde:kunde, salg:salg})
-})
-
-server.get("/api/logut",autentiser,(req,res)=>{
-    res.clearCookie("authorization")
-    res.status(200).send()
-})
 
 server.get("/api/send",(req,res)=>{
     const stoff = req.cookies["bought"]
     res.status(201).json(stoff)
 })
 
-server.post("/api/change-state",autentiser,(req,res)=>{
-    const connection = mysql.createConnection({
-        host: process.env.NEXT_AZURE_HOST,
-        user: process.env.NEXT_AZURE_USER_NAME,
-        password: process.env.NEXT_AZURE_PASS,
-        database: process.env.NEXT_AZURE_DATABASE,
-        port: process.env.NEXT_AZURE_PORT
-      })
-    req.body.forEach((element)=>{
-        const info=element[0].split(",")
-        const q1 = `UPDATE kunde SET status_ = "sendt" WHERE id = ${info[0]} AND betaling_id = "${info[1]}"`;
-        connection.query(q1,(err,result,field)=>{
-            if(err){
-                return res.status(500)
-            }
-        })
-        const q2 = `UPDATE salg SET status_ = "sendt" WHERE kunde_id = ${info[0]} AND betaling_id = "${info[1]}"`;
-        connection.query(q2,(err,result,field)=>{
-            if(err){
-                return res.status(500)
-            }
-        })
-
-        const htmll=`
-        <h2> Dear ${info[3]}, Your order at AdNaf has been sendt</h2>
-        <h3> We once again give you the customer id:${info[0]} as a reference</h3> 
-        <h4>Thank you for choosing AdNaf and we hope to welcome you back again.`;
-        
-        const transporter=nodemailer.createTransport({
-            service:"gmail",
-            host:"smtp.gmail.com",
-            secure:false,
-            auth:{
-                user:process.env.MAIL,
-                pass:process.env.MAIL_PASS
-            }
-        })
-        const resp=transporter.sendMail({
-            from:"Zsaffron <zsaffroncontact@gmail.com>",
-            to:info[2],
-            subject:"shipping confirmation",
-            html:htmll,
-        })
-    })
-
-    connection.end()
-    res.status(200).json({success:true})
+server.get("/api/send_kunde",(req,res)=>{
+    const kunde = req.cookies["kunde"]
+    res.status(200).json(kunde)
 })
 
 server.post("/api/login",(req,res)=>{
@@ -243,6 +148,29 @@ server.post("/api/create-payment-intent",async (req,res)=>{
             const verdi=element.amount*element.pris;
             total=sum(total,verdi)
         });
+
+        let ttq=0;
+        bought.forEach((ene)=>{
+          const prod=produkter.find((pr)=>pr.id===ene.id)
+          if(prod.navn.split(" ")[1]==="kg"){
+            ttq+=ene.amount*parseInt(prod.navn.split(" ")[0])*1000;
+          }else{
+            ttq+=ene.amount*parseInt(prod.navn.split(" ")[0]);
+          }
+        })
+
+        if(ttq>4000){
+            total=total+600;
+          } else if(ttq>500 && ttq<=4000){
+            total=total+350;
+          }else if(ttq>100 && ttq<=500){
+            total=total+200;
+          } else if(ttq>25 && ttq<=100){
+            total=total+100;
+          } else{
+            total=total+40;
+        }
+
         const paymentIntent = await stripe.paymentIntents.create({
             amount: total*100,
             currency: "NOK",
@@ -264,7 +192,7 @@ server.post("/api/create-payment-intent",async (req,res)=>{
 })
 
 
-server.post('/api/webhook', express.raw({type: 'application/json'}), (req, res) => {
+server.post('/api/min_webhook', express.raw({type: 'application/json'}), (req, res) => {
     let event=req.body.type;
     try{
         if(event=="payment_intent.succeeded"){
@@ -335,7 +263,7 @@ server.post('/api/webhook', express.raw({type: 'application/json'}), (req, res) 
                     })
 
                     const html=`
-                    <h2> Dear ${kunde.navn}, Thank you for buying at AdNaf </h2>
+                    <h2> Dear ${kunde.navn}, Thank you for buying at Zsaffron </h2>
                     <h3> Your order will be sendt as soon as possible to the adress</h3> <h3>${kunde.Adresse}, ${kunde.zip_code} ${kunde.city}, ${kunde.country}</h3> 
                     <h3>You are given a customer-id and a order-id for later references</h3> <h3>customer-id:${kunde_id}   order-id:${id}</h3>
                     <h3>order detail:</h3>
@@ -346,7 +274,7 @@ server.post('/api/webhook', express.raw({type: 'application/json'}), (req, res) 
                             </div>`
                     })}
                     <h3>total:${amount}${currency}</h3>
-                    <h4>Thank you for choosing AdNaf. We will keep you informed about your order's status and send you a notification once your package has been shipped. We appreciate your business and hope to welcome you back soon</h4>
+                    <h4>Thank you for choosing Zsaffron. We will keep you informed about your order's status and send you a notification once your package has been shipped. We appreciate your business and hope to welcome you back soon</h4>
                     `;
                     
                     const attach=dataen.map((en)=>{
