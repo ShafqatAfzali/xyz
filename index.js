@@ -278,7 +278,7 @@ server.post('/api/min_webhook', express.raw({type: 'application/json'}), (req, r
                     `;
                     
                     const attach=dataen.map((en)=>{
-                        const path="./public"+en.img
+                        const path="./pics"+en.img
                         const filnavn=path.split("/")[3]
                         const cid=en.img_path.split(":")[1]
                         return {filename:filnavn, path:path, cid:cid}
@@ -286,7 +286,7 @@ server.post('/api/min_webhook', express.raw({type: 'application/json'}), (req, r
                     const transporter=nodemailer.createTransport({
                         service:"gmail",
                         host:"smtp.gmail.com",
-                        secure:false,
+                        secure:true,
                         auth:{
                             user:process.env.MAIL,
                             pass:process.env.MAIL_PASS
